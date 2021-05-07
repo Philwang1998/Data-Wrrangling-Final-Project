@@ -2,11 +2,15 @@
 title: "DW Final PROj"
 author: "Tianhe Wang"
 date: "4/26/2021"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(here)
+original_data <- read.csv(here("hotel_bookings.csv"), sep = ",")
 
 ```
 
@@ -15,7 +19,6 @@ knitr::opts_chunk$set(echo = TRUE)
 This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
 
 When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
 
 
 ```{r}
@@ -29,31 +32,52 @@ library(countrycode)
 library(choroplethrMaps)
 library(choroplethr)
 ```
+# Background
+**As a tour guide, my father is responsible for designing, scheduling trips for customers and taking care of them well. Thanks to his job, I have also got many chances to visit a lot of places since I remember things. In my memories, hotel is always one of the most interesting part of the trip. No matter if it is a hotel, hostel or a guest hotel, all of them gave me unique experience and memories. Therefore, I decided to collect some data about hotel for this project.**
+
+# Data Collection
+**After deciding the big direction, I went to Kaggle and UCI Machine Learning repository to find a good dataset. There are actually many interesting datasets like Airbnb's open data. Also some datasets including hotels' review which allow people to do the language sentiments analysis. However, I chose the Hotel Booking Demand dataset in the end because there are 32 columns and 11930 rows which is a perfect dataset for wrangling purpose in my mind. The dataset includes many useful information so that I can do whatever analysis I want. After downloading the csv. file from Kaggle, I start thinking of the ultimate goal of this project. Then I decided to focus on cancels of hotel bookings and try to predict if the customer cancel or not order based on the information. I think this is valuable because, given a customer's information, hotels can better anticipate if the customer would like to stay or not. Also, hotels can improve their services based on the analysis to stay more customers and better segment customer groups for advertising and more business purposes. Basically, these are reasons why I do this project.**
 
 
-```{r}
-original_data <- read.csv("hotel_bookings.csv", sep=",")
-head(original_data, 100)
+## here is a brief look at data
+```{r, chunk-a}
+summary(original_data)
+head(original_data)
 dim(original_data)
 ```
-### clean data
-```{r}
+# Data Preprocessing
+**In this section, I first clean the NA values in the dataset. Because some NAs are strings, I have to change them manully instead of using na.omit function only. Besides, for the columns Agent and Company, the reason they have a lot of NAs is the way Data Collector tidying the data. For example, data collector uses different number to represent what agents each visitor use. For those who travel without using agents, their value in column Agent is NA. Therefore, we can not simply remove this kind of NAs from dataset. I then decided to set those values to 0.**
+
+## data cleaning
+```{r, chunk-b}
 #Clean NA values
 cleaned_data = original_data
+#See how many NAs in dataset
 map(cleaned_data, ~sum(is.na(.)))
 cleaned_data <- na.omit(cleaned_data)
+#See how many Char NULL in dataset
 map(cleaned_data, ~sum(.== "NULL"))
 cleaned_data <- cleaned_data[!cleaned_data$country=="NULL", ]
 cleaned_data$company[cleaned_data$company == "NULL"] <- as.character(0)
 cleaned_data$agent[cleaned_data$agent == "NULL"] <- as.character(0)
-head(cleaned_data)
 dim(cleaned_data)
 cleaned_data <- as_tibble(cleaned_data) %>% 
   mutate(is_canceled = as.factor(is_canceled))
+
+
+```
+```{r, chunk-tidy}
+#uncomment code below to get a copy of cleaned and tidy csv data. 
+#write.csv(cleaned_data, here("tidy_data.csv"), row.names = F)
 ```
 
-### visitor home country analysis
-```{r, fig.height=5, fig.width=15}
+# Data Visualization
+
+**In this section, I start visually analyze data. Firstly, I plotted a Choropleth map here to give basic idea where those visitors come from and a barplot to show more clearly. As you can see underneath, most visitors come from Europe, United States and China. Surprisingly, almost half comes from Portugal and this is what you can see only from the barplot.**
+
+## visitor home country analysis
+```{r,chunk-c1, fig.height=5, fig.width=15}
+#A choropleth map to demonstrate where most visitors come from
 data(country.regions)
 cleaned_data$country[cleaned_data$country=="CN"] <- "CHN"
 country_data <- cleaned_data %>% 
@@ -73,7 +97,8 @@ country_data <- na.omit(country_data)
 country_choropleth(country_data, title = "home country of hotel books", num_colors=9)
 
 ```
-```{r, fig.width=12, fig.height=5}
+```{r,chunk-c2, fig.width=12, fig.height=5}
+#Barplot to show more clearly the countries with most visitors
 country_data %>% 
   arrange(desc(value)) %>% 
   head(12) %>% 
@@ -81,14 +106,14 @@ country_data %>%
   geom_bar(stat="identity")+
   xlab("region")
 ```
+## time and season analysis
+
+**Then I want to analyze how number of cancels change according to season change. I first combine 3 arrival_date columns into one as yearmon format(xxxx-xx) to be able to plot through time. Then I count the number of cancels and number of bookings in each month separately and set them as y-axis.The plot underneath gives insight that trend of number of cancels is almost as same as trend of number of bookings.   **
 
 
 
 
-### time and season analysis
-
-
-```{r}
+```{r, chunk-d1}
 #combine arrival date info into one column as date format
 data <- cleaned_data
 data$arrival_date_month <- str_sub(data$arrival_date_month,1,3)
@@ -98,10 +123,10 @@ data$arrival_date <- ymd(data$arrival_date)
 data$arrival_date <- as.Date(data$arrival_date, "%y/%m/%d")
 data$arrival_date <- as.yearmon(data$arrival_date)
 time_data <- data
-head(data)
+head(data[, c(2, 4, 5, 7, 33)])
 ```
 
-```{r, , fig.width=10, fig.height=4}
+```{r,chunk-d2 , fig.width=10, fig.height=4}
 #compare the trend of cancellation and the trend of bookings
 date <- data %>% 
   select(is_canceled, arrival_date) 
@@ -128,21 +153,40 @@ canceled <- ggplot(date_total)+
 plot_grid(total, canceled)
 
 ```
-### hotel type analysis
-```{r}
+## hotel type analysis
+**Then I tried to find the relationship between number of cancels and price but first, let's take a look how different types may vary in number of cancels. The plot below shows that the proportion of cancels for city hotel is much higher than for resort city. Therefore, I think it is worth spliting those two types of hotel in later analysis **
+
+
+
+```{r, chunk-e}
+require(tidyverse)
 hotel_data <- cleaned_data %>% 
   select(hotel, is_canceled)
+
+
+  
 hotel_data$is_canceled <- as.factor(hotel_data$is_canceled)
+
+hotel_data %>% 
+  group_by(hotel, is_canceled) %>%
+  summarise(n())
 
 ggplot(hotel_data)+
   geom_bar(aes(is_canceled, color=hotel), position="dodge")
-hotel_data
 
+city_hotel_cancelrate <- 33076/(46226+33076)
+resort_hotel_cancelrate <- 11077/(28519+11077)
+
+paste(c("city hotel cancel rate is:", city_hotel_cancelrate), collapse = " ")  
+paste(c("resort hotel cancel rate is:", resort_hotel_cancelrate), collapse = " ")
 #we can see city hotel has larger cancel rate. I think it is worth analyzing those two types seperately in the following analysis
 ```
-### hotel price analysis
-#### adr menas Average Daily Rate as defined by dividing the sum of all lodging transactions by the total number of staying nights
-```{r, fig.width=15, fig.height=4}
+## hotel price analysis
+## adr here menas Average Daily Rate as defined by dividing the sum of all lodging transactions by the total number of staying nights
+**Again, I compare price and number of cancels as time goes. For the Resort hotel, the number of cancels is really stable compared to price change. I would say price does not influence cancels in Resort hotel a lot. However, for the city hotel, I think both price and number of cancels have a similar pattern though it is not really obvious. If we take a closer look, we can see that the direction change of price and cancel lines for City hotel are really similar. Therefore, I would conclude price and cancels have certain relationship for City hotel at least.**
+
+
+```{r,chunk-f, fig.width=15, fig.height=4}
 #price trend over the whole time
 price_data <- time_data %>% 
   select(hotel, arrival_date, adr)
@@ -155,7 +199,7 @@ price_data <- price_data %>%
 
 price_plot <- ggplot(price_data, aes(arrival_date, adr))+
   geom_line(aes(color = as.factor(hotel)))+
-  xlab("time")
+  xlab("arrival_date")
 
 #cancel_trend over the whole time
 cancel_data <- time_data %>% 
@@ -172,15 +216,14 @@ cancel_plot <- ggplot(cancel_data, aes(arrival_date, n))+
 plot_grid(price_plot, cancel_plot)
 
 ```
-### stayed night analysis
-```{r}
+## stayed night analysis
+**stays_night is another numerical variable which could influence the prediction of cancellation so I would like to see its distribution here. The plot below shows that most people choose to stay 1-3 nights for both two types of hotel. However, it is interesting that a considerable number of people choose to live in Resort hotel for 7 nights(1-week). This might create some outliers in the following model fitting part.**
+```{r, chunk-g}
 library(scales)
 stay_data <- cleaned_data %>% 
   mutate(stays=stays_in_weekend_nights+stays_in_week_nights) %>%
   select(hotel, stays)
-dim(stay_data)
-dim(cleaned_data)
-head(stay_data)
+
 
 #get all stayed nights value for x labels
 x_axis_labels <- min(stay_data[,2]):max(stay_data[,2])
@@ -193,8 +236,9 @@ stay_data %>%
   
   
 ```
-### repeated guests analysis
-```{r}
+## repeated guests analysis
+**Finally, I want to look at the proportion of repeated guests in the full data. Unfortunately, there is only 5% repeated guests in this data collection. The sample would be too small if I continue split them by hotel type. Therefore, I stop the analysis here.**
+```{r, chunk-h}
 
 rg_data <- cleaned_data %>% 
   select(hotel,is_repeated_guest) %>% 
@@ -208,22 +252,23 @@ rg_data %>%
   geom_bar(stat = "identity")
 
 repeats_rate <-length(which(rg_data$is_repeated_guest == 0))/length(rg_data$is_repeated_guest)
-repeats_rate
+paste(c("The proportion of repeated guest is", repeats_rate), collapse = " ")
 
 #only 5 percent are repeated guest so I do not think it is worth grouping by hotel and work on the cancel rate here.
 ```
-
-### apply logistic regression model
-```{r}
+# Model Fitting
+## apply logistic regression model
+**I fit a logistic regression model here to predict if guests cancel or not. I first plot a corr plot to show the correlations among some important features. Without using cross validation, I got a accuracy of 0.68. It is not a good enough result but I just stop here.**
+```{r, chunk-i1}
 library(corrplot)
-head(cleaned_data)
+
 corr_data <- cleaned_data[,c(2:3, 9:12, 17:18, 28) ]
 corr_data <- apply(corr_data, 2, as.numeric)
 corr_data <- as.data.frame(corr_data)
-corr_data
 M <- cor(corr_data)
 corrplot(M, method = "circle")
-head(corr_data)
+
+
 train <- corr_data[1:50000, ]
 test <- corr_data[50001:118898,]
 
@@ -236,12 +281,14 @@ summary(model)
 
 
 ```
-```{r}
+```{r, chunk_i2}
 fitted.results <- predict(model,newdata=test,type='response')
 fitted.results <- ifelse(fitted.results > 0.5,1,0)
 misClasificError <- mean(fitted.results != test$is_canceled)
 print(paste('Accuracy',1-misClasificError))
 ```
+# Conclusion
 
+**Based on made analysis, I would say number of cancels is positively proportional to the number of bookings. Guests in different types of hotel tend to have different cancel behavior and staying time. Price has certain level of impact on number of cancels for City hotel but not obvious. As for Resort hotel, price does not have any apparent influence.**
 
 
