@@ -1,0 +1,242 @@
+---
+title: "DW Final PROj"
+author: "Tianhe Wang"
+date: "4/26/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(scales)
+library(forecast)
+library(zoo)
+library(cowplot)
+library(countrycode)
+library(choroplethrMaps)
+```
+
+
+```{r}
+setwd("C:/Users/philw/Desktop/Data Wrangling")
+original_data <- read.csv("hotel_bookings.csv", sep=",")
+head(original_data, 100)
+dim(original_data)
+```
+### clean data
+```{r}
+#Clean NA values
+cleaned_data = original_data
+map(cleaned_data, ~sum(is.na(.)))
+cleaned_data <- na.omit(cleaned_data)
+map(cleaned_data, ~sum(.== "NULL"))
+cleaned_data <- cleaned_data[!cleaned_data$country=="NULL", ]
+cleaned_data$company[cleaned_data$company == "NULL"] <- as.character(0)
+cleaned_data$agent[cleaned_data$agent == "NULL"] <- as.character(0)
+head(cleaned_data)
+dim(cleaned_data)
+cleaned_data <- as_tibble(cleaned_data) %>% 
+  mutate(is_canceled = as.factor(is_canceled))
+```
+
+### visitor home country analysis
+```{r, fig.height=5, fig.width=15}
+data(country.regions)
+cleaned_data$country[cleaned_data$country=="CN"] <- "CHN"
+country_data <- cleaned_data %>% 
+  select(iso2c = country) %>% 
+  group_by(iso2c) %>% 
+  summarize(value = n()) %>% 
+  arrange(iso2c)
+code = country_data$iso2c
+code = countrycode(code, 'iso3c', 'iso2c')
+code[is.na(code)] <- "TL"
+country_data$iso2c = code
+country_data <- country_data %>% 
+  left_join(country.regions, by = "iso2c") %>% 
+  select(region, value)
+
+country_data <- na.omit(country_data)
+country_choropleth(country_data, title = "home country of hotel books", num_colors=9)
+
+```
+```{r, fig.width=12, fig.height=5}
+country_data %>% 
+  arrange(desc(value)) %>% 
+  head(12) %>% 
+  ggplot(aes(x=reorder(region, -value), y=value))+
+  geom_bar(stat="identity")+
+  xlab("region")
+```
+
+
+
+
+### time and season analysis
+
+
+```{r}
+#combine arrival date info into one column as date format
+data <- cleaned_data
+data$arrival_date_month <- str_sub(data$arrival_date_month,1,3)
+data$arrival_date_month = match(data$arrival_date_month, month.abb)
+data$arrival_date <- paste(data$arrival_date_year, data$arrival_date_month, data$arrival_date_day_of_month, sep = "-")
+data$arrival_date <- ymd(data$arrival_date)
+data$arrival_date <- as.Date(data$arrival_date, "%y/%m/%d")
+data$arrival_date <- as.yearmon(data$arrival_date)
+time_data <- data
+head(data)
+```
+
+```{r, , fig.width=10, fig.height=4}
+#compare the trend of cancellation and the trend of bookings
+date <- data %>% 
+  select(is_canceled, arrival_date) 
+date_total <- date %>% 
+  group_by(arrival_date) %>% 
+  summarise(n = n())
+  
+date_canceled <- date %>% 
+  filter(is_canceled == 1) %>% 
+  group_by(arrival_date) %>% 
+  summarise(n = n())
+
+total <- ggplot(date_canceled)+
+  geom_line(aes(arrival_date, n))+
+  ggtitle("trend of cancellation")+
+  ylab("number of cancellation")
+
+canceled <- ggplot(date_total)+
+  geom_line(aes(arrival_date, n))+
+  ggtitle("trend of booking")+
+  ylab("number of booking")
+
+
+plot_grid(total, canceled)
+
+```
+### hotel type analysis
+```{r}
+hotel_data <- cleaned_data %>% 
+  select(hotel, is_canceled)
+hotel_data$is_canceled <- as.factor(hotel_data$is_canceled)
+
+ggplot(hotel_data)+
+  geom_bar(aes(is_canceled, color=hotel), position="dodge")
+hotel_data
+
+#we can see city hotel has larger cancel rate. I think it is worth analyzing those two types seperately in the following analysis
+```
+### hotel price analysis
+#### adr menas Average Daily Rate as defined by dividing the sum of all lodging transactions by the total number of staying nights
+```{r, fig.width=15, fig.height=4}
+#price trend over the whole time
+price_data <- time_data %>% 
+  select(hotel, arrival_date, adr)
+dim(price_data[price_data$adr==0,])
+price_data <- price_data[price_data$adr!=0,]
+
+price_data <- price_data %>% 
+  group_by(hotel, arrival_date) %>% 
+  summarise(adr=mean(adr))
+
+price_plot <- ggplot(price_data, aes(arrival_date, adr))+
+  geom_line(aes(color = as.factor(hotel)))+
+  xlab("time")
+
+#cancel_trend over the whole time
+cancel_data <- time_data %>% 
+  select(hotel, arrival_date, is_canceled) %>% 
+  filter(is_canceled == 1) %>% 
+  group_by(hotel, arrival_date) %>% 
+  summarise(n=n())
+
+cancel_plot <- ggplot(cancel_data, aes(arrival_date, n))+
+  geom_line(aes(color= as.factor(hotel)))+
+  ylab("number of cancels")
+
+
+plot_grid(price_plot, cancel_plot)
+
+```
+### stayed night analysis
+```{r}
+library(scales)
+stay_data <- cleaned_data %>% 
+  mutate(stays=stays_in_weekend_nights+stays_in_week_nights) %>%
+  select(hotel, stays)
+dim(stay_data)
+dim(cleaned_data)
+head(stay_data)
+
+#get all stayed nights value for x labels
+x_axis_labels <- min(stay_data[,2]):max(stay_data[,2])
+
+stay_data %>% 
+  ggplot(aes(stays, color = hotel))+
+  geom_histogram(bins = 50, position = "dodge")+
+  coord_cartesian(xlim=c(0, 15))+
+  scale_x_continuous(labels = x_axis_labels, breaks = x_axis_labels)
+  
+  
+```
+### repeated guests analysis
+```{r}
+
+rg_data <- cleaned_data %>% 
+  select(hotel,is_repeated_guest) %>% 
+  #mutate(is_canceled = as.factor(is_canceled)) %>% 
+  mutate(is_repeated_guest = as.factor(is_repeated_guest)) %>% 
+  group_by(hotel, is_repeated_guest) %>%   
+  summarise(n=n())
+
+rg_data %>% 
+  ggplot(aes(is_repeated_guest, n))+
+  geom_bar(stat = "identity")
+
+repeats_rate <-length(which(rg_data$is_repeated_guest == 0))/length(rg_data$is_repeated_guest)
+repeats_rate
+
+#only 5 percent are repeated guest so I do not think it is worth grouping by hotel and work on the cancel rate here.
+```
+
+### apply logistic regression model
+```{r}
+library(corrplot)
+head(cleaned_data)
+df <- cleaned_data[, c(2, 3:12, 17:19, 28:30)]
+df
+train <- df[1:50000, ]
+test <- df[50001:118898,]
+
+model <- glm(is_canceled ~ .,
+               data = train,
+               family = binomial((link = 'logit')))
+
+summary(model)
+
+
+
+```
+```{r}
+fitted.results <- predict(model,newdata=test,type='response')
+fitted.results <- ifelse(fitted.results > 0.5,1,0)
+misClasificError <- mean(fitted.results != test$is_canceled)
+print(paste('Accuracy',1-misClasificError))
+```
+
+
+
