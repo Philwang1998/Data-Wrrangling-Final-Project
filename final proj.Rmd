@@ -27,11 +27,11 @@ library(zoo)
 library(cowplot)
 library(countrycode)
 library(choroplethrMaps)
+library(choroplethr)
 ```
 
 
 ```{r}
-setwd("C:/Users/philw/Desktop/Data Wrangling")
 original_data <- read.csv("hotel_bookings.csv", sep=",")
 head(original_data, 100)
 dim(original_data)
@@ -217,10 +217,15 @@ repeats_rate
 ```{r}
 library(corrplot)
 head(cleaned_data)
-df <- cleaned_data[, c(2, 3:12, 17:19, 28:30)]
-df
-train <- df[1:50000, ]
-test <- df[50001:118898,]
+corr_data <- cleaned_data[,c(2:3, 9:12, 17:18, 28) ]
+corr_data <- apply(corr_data, 2, as.numeric)
+corr_data <- as.data.frame(corr_data)
+corr_data
+M <- cor(corr_data)
+corrplot(M, method = "circle")
+head(corr_data)
+train <- corr_data[1:50000, ]
+test <- corr_data[50001:118898,]
 
 model <- glm(is_canceled ~ .,
                data = train,
